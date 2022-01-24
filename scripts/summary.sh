@@ -1,7 +1,7 @@
 #!/bin/bash
 set -eux
 
-ip=$1
+ip=$PVE_CLUSTER_ADDR
 fqdn=$(hostname --fqdn)
 
 # configure apt for non-interactive mode.

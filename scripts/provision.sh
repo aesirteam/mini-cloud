@@ -1,7 +1,7 @@
 #!/bin/bash
 set -eux
 
-ip=$1
+ip=$PVE_CLUSTER_ADDR
 fqdn=$(hostname --fqdn)
 
 # configure apt for non-interactive mode.
@@ -17,7 +17,7 @@ if growpart /dev/[vs]da 3; then
 fi
 
 echo y | pveceph install --version octopus
-echo "[global]" > /etc/ceph/ceph.conf
+touch /etc/ceph/ceph.conf
 
 apt-get install -y dnsmasq
 systemctl stop dnsmasq
@@ -37,7 +37,7 @@ iface eth1 inet manual
 
 auto eth2
 iface eth2 inet static
-    address $2
+    address $STORAGE_CLUSTER_ADDR
     netmask 255.255.255.0
 
 auto vmbr0

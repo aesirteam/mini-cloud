@@ -2,22 +2,15 @@
 
 hostnamectl --static set-hostname $1
 
-if [ -f /etc/selinux/config ]; then
+if [[ $1 =~ ^pve.* ]]; then
+  sed -i "s/pve/$1/g" /etc/hosts
+  sed -i "s/pve/$1/g" /etc/postfix/main.cf
+
+  echo "export PVE_CLUSTER_ADDR=$2" >> /etc/profile
+  echo "export STORAGE_CLUSTER_ADDR=$3" >> /etc/profile
+elif [[ $1 =~ ^ceph.* ]]; then
   setenforce 0
   sed -i 's/enforcing/disabled/g' /etc/selinux/config
 fi
 
-# sed -i "s/pve\$/$1/" /etc/hosts
-if [ -f /etc/postfix/main.cf ]; then 
-  sed -i "s/pve/$1/g" /etc/hosts
-  sed -i "s/pve/$1/g" /etc/postfix/main.cf
-fi
-
 ln -fs /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
-
-if [ $2 == "storage" ]; then
-  yum update -y
-elif [ $2 == "cluster" ]; then
-  apt update
-  apt upgrade -y
-fi
