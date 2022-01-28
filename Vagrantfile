@@ -50,8 +50,6 @@ Vagrant.configure("2") do |config|
 
 			srv.vm.provision :shell, path: 'scripts/prepare.sh', args: [node[:name], node[:eth1], node[:eth2]]
 			srv.vm.provision :shell, path: 'scripts/provision.sh'
-			srv.vm.provision :shell, path: 'scripts/provision-pveproxy-certificate.sh'
-	  		srv.vm.provision :shell, path: 'scripts/summary.sh'
 		end
     end
 

@@ -2,7 +2,8 @@
 set -eux
 
 ip=$PVE_CLUSTER_ADDR
-fqdn=$(hostname --fqdn)
+domain=$(hostname --fqdn)
+dn=$(hostname)
 
 # configure apt for non-interactive mode.
 export DEBIAN_FRONTEND=noninteractive
@@ -15,13 +16,6 @@ if growpart /dev/[vs]da 3; then
     lvextend -L +5G --resizefs /dev/pve/root
     lvextend --extents +100%FREE /dev/pve/data
 fi
-
-echo y | pveceph install --version octopus
-touch /etc/ceph/ceph.conf
-
-apt-get install -y dnsmasq
-systemctl stop dnsmasq
-systemctl disable dnsmasq
 
 # configure the network for NATting.
 ifdown vmbr0
@@ -63,81 +57,63 @@ iface vmbr0 inet static
     post-down iptables -t nat -D POSTROUTING -s '$ip/24' ! -d '$ip/24' -o eth0 -j MASQUERADE
 EOF
 sed -i -E "s,^[^ ]+( .*pve.*)\$,$ip\1," /etc/hosts
-sed 's,\\,\\\\,g' >/etc/issue <<'EOF'
 
-     _ __  _ __ _____  ___ __ ___   _____  __ __   _____
-    | '_ \| '__/ _ \ \/ / '_ ` _ \ / _ \ \/ / \ \ / / _ \
-    | |_) | | | (_) >  <| | | | | | (_) >  <   \ V /  __/
-    | .__/|_|  \___/_/\_\_| |_| |_|\___/_/\_\   \_/ \___|
-    | |
-    |_|
-
-EOF
 cat >>/etc/issue <<EOF
     https://$ip:8006/
-    https://$fqdn:8006/
+    https://$domain:8006/
 
 EOF
 ifup vmbr0
 ifup eth1
+ifup eth2
 iptables-save # show current rules.
 killall agetty | true # force them to re-display the issue file.
 
-# disable the "You do not have a valid subscription for this server. Please visit www.proxmox.com to get a list of available options."
-# message that appears each time you logon the web-ui.
-# NB this file is restored when you (re)install the pve-manager package.
-echo 'Proxmox.Utils.checked_command = function(o) { o(); };' >>/usr/share/pve-manager/js/pvemanagerlib.js
+mkdir -p /vagrant/shared
+pushd /vagrant/shared
 
-# configure the shell.
-cat >/etc/profile.d/login.sh <<'EOF'
-[[ "$-" != *i* ]] && return
-export EDITOR=vim
-export PAGER=less
-alias l='ls -lF --color'
-alias ll='l -a'
-alias h='history 25'
-alias j='jobs -l'
-EOF
+# create a self-signed certificate.
+if [ ! -f $domain-crt.pem ]; then
+    openssl genrsa \
+        -out $domain-key.pem \
+        2048 \
+        2>/dev/null
+    chmod 400 $domain-key.pem
+    openssl req -new \
+        -sha256 \
+        -subj "/CN=$domain" \
+        -key $domain-key.pem \
+        -out $domain-csr.pem
+    openssl x509 -req -sha256 \
+        -signkey $domain-key.pem \
+        -extensions a \
+        -extfile <(echo "[a]
+            subjectAltName=DNS:$domain,IP:$ip
+            extendedKeyUsage=critical,serverAuth
+            ") \
+        -days 365 \
+        -in  $domain-csr.pem \
+        -out $domain-crt.pem
+    openssl x509 \
+        -in $domain-crt.pem \
+        -outform der \
+        -out $domain-crt.der
+    # dump the certificate contents (for logging purposes).
+    #openssl x509 -noout -text -in $domain-crt.pem
+fi
 
-cat >/etc/inputrc <<'EOF'
-set input-meta on
-set output-meta on
-set show-all-if-ambiguous on
-set completion-ignore-case on
-"\e[A": history-search-backward
-"\e[B": history-search-forward
-"\eOD": backward-word
-"\eOC": forward-word
-EOF
+# install the certificate.
+# see https://pve.proxmox.com/wiki/HTTPS_Certificate_Configuration_(Version_4.x_and_newer)
+mkdir -p /etc/pve/nodes/$dn
+cp $domain-key.pem "/etc/pve/nodes/$dn/pveproxy-ssl.key"
+cp $domain-crt.pem "/etc/pve/nodes/$dn/pveproxy-ssl.pem"
+systemctl restart pveproxy
+# dump the TLS connection details and certificate validation result.
+(printf 'GET /404 HTTP/1.0\r\n\r\n'; sleep .1) | openssl s_client -CAfile $domain-crt.pem -connect $domain:8006 -servername $domain
 
-# configure the motd.
-# NB this was generated at http://patorjk.com/software/taag/#p=display&f=Big&t=proxmox%20ve.
-#    it could also be generated with figlet.org.
-cat >/etc/motd <<'EOF'
 
-     _ __  _ __ _____  ___ __ ___   _____  __ __   _____
-    | '_ \| '__/ _ \ \/ / '_ ` _ \ / _ \ \/ / \ \ / / _ \
-    | |_) | | | (_) >  <| | | | | | (_) >  <   \ V /  __/
-    | .__/|_|  \___/_/\_\_| |_| |_|\___/_/\_\   \_/ \___|
-    | |
-    |_|
-
-EOF
-
-# show versions.
-# uname -a
-# lvm version
-# kvm --version
-# lxc-ls --version
-# cat /etc/os-release
-# cat /etc/debian_version
-# cat /etc/machine-id
-# pveversion -v
-# lsblk -x KNAME -o KNAME,SIZE,TRAN,SUBSYSTEMS,FSTYPE,UUID,LABEL,MODEL,SERIAL
-
-# show the proxmox web address.
 cat <<EOF
 access the proxmox web interface at:
     https://$ip:8006/
-    https://$fqdn:8006/
+    https://$domain:8006/
 EOF
