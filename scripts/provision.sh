@@ -69,6 +69,7 @@ ifup eth2
 iptables-save # show current rules.
 killall agetty | true # force them to re-display the issue file.
 
+
 mkdir -p /vagrant/shared
 pushd /vagrant/shared
 

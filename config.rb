@@ -1,5 +1,3 @@
-$groups = {'pve' => [], 'ceph' => []}
-
 #network define:
 #pve_cluster: 10.10.10.0/24
 #storage_network: 10.20.20.0/24
@@ -59,6 +57,8 @@ $ceph = [
 	    :eth2 => '172.18.0.12',
 	}
 ]
+
+$groups = {'pve' => [], 'ceph' => []}
 
 $pve.each {|item| $groups['pve'].push(item[:name])}
 $ceph.each {|item| $groups['ceph'].push(item[:name])}
