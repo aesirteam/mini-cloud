@@ -16,12 +16,12 @@ configure_firewall: false
 ceph_origin: repository
 ceph_repository: community
 ceph_mirror: http://mirrors.163.com/ceph
-ceph_stable_key: https://mirrors.163.com/ceph/keys/release.asc
+ceph_stable_key: http://mirrors.163.com/ceph/keys/release.asc
 ceph_stable_release: octopus
 ceph_stable_repo: "{{ ceph_mirror }}/rpm-{{ ceph_stable_release }}"
 nfs_ganesha_stable: true
 nfs_ganesha_stable_branch: V3.3-stable
-nfs_ganesha_stable_deb_repo: "{{ ceph_mirror }}/nfs-ganesha/deb-{{ nfs_ganesha_stable_branch }}/{{ ceph_stable_release }}"
+nfs_ganesha_stable_deb_repo: "{{ ceph_mirror }}/nfs-ganesha/rpm-{{ nfs_ganesha_stable_branch }}/{{ ceph_stable_release }}"
 monitor_interface: eth1
 public_network: 10.20.20.0/24
 cluster_network: 172.18.0.0/24
@@ -32,6 +32,8 @@ radosgw_frontend_port: "{{ radosgw_civetweb_port if radosgw_frontend_type == 'ci
 ceph_conf_overrides:
   global:
     auth_allow_insecure_global_id_reclaim: false
+    auth_expose_insecure_global_id_reclaim: false
+    mon_warn_on_insecure_global_id_reclaim_allowed: false
     mon_allow_pool_size_one: true
     mon_allow_pool_delete: true
     mon_warn_on_pool_no_redundancy: false

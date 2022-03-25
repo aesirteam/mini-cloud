@@ -1,0 +1,16 @@
+<pool type="iscsi">
+  <name>iscsipool</name>
+  <source>
+    <host name="10.20.20.31"/>
+    <device path="iqn.2001-07.com.ceph:libvirt"/>    
+    <initiator>
+      <iqn name='iqn.1993-08.org.debian:initiator'/>
+    </initiator>
+    <auth username='user@001' type='chap'>
+      <secret usage='libvirtiscsi'/>
+    </auth>
+  </source>
+  <target>
+    <path>/dev/disk/by-path</path>
+  </target>
+</pool>

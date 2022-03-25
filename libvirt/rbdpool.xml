@@ -1,0 +1,12 @@
+<pool type='rbd'>
+  <name>rbdpool</name>
+  <source>
+    <name>rbd</name>
+    <host name='10.20.20.30'/>
+    <host name='10.20.20.31'/>
+    <host name='10.20.20.32'/>
+    <auth username='admin' type='ceph'>
+      <secret usage='client.admin'/>
+    </auth>
+  </source>
+</pool>

@@ -1,9 +1,13 @@
 #!/bin/bash
+
 set -eux
 
-ip=$PVE_CLUSTER_ADDR
-domain=$(hostname --fqdn)
-dn=$(hostname)
+ip=$1
+gw=$(echo $ip | awk -F. '{printf "%s.%s.%s.1",$1,$2,$3}')
+dn=$HOSTNAME
+domain=$dn.example.com
+
+ln -fs /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
 
 # configure apt for non-interactive mode.
 export DEBIAN_FRONTEND=noninteractive
@@ -31,8 +35,11 @@ iface eth1 inet manual
 
 auto eth2
 iface eth2 inet static
-    address $STORAGE_CLUSTER_ADDR
+    address $2
     netmask 255.255.255.0
+
+auto eth3
+iface eth3 inet manual
 
 auto vmbr0
 iface vmbr0 inet static
@@ -41,34 +48,30 @@ iface vmbr0 inet static
     bridge_ports eth1
     bridge_stp off
     bridge_fd 0
-    # enable IP forwarding. needed to NAT and DNAT.
-    post-up   echo 1 >/proc/sys/net/ipv4/ip_forward
-    post-up   dnsmasq -u root --strict-order --bind-interfaces \
-      --pid-file=/var/run/vmbr0.pid \
-      --conf-file= \
-      --except-interface=lo \
-      --interface vmbr0  \
-      --dhcp-range 10.10.10.2,10.10.10.254,255.255.255.0 \
-      --dhcp-option=3,$ip \
-      --dhcp-option=6,192.168.121.1 \
-      --dhcp-leasefile=/var/run/vmbr0.leases
-    # NAT through eth0.
-    post-up   iptables -t nat -A POSTROUTING -s '$ip/24' ! -d '$ip/24' -o eth0 -j MASQUERADE
-    post-down iptables -t nat -D POSTROUTING -s '$ip/24' ! -d '$ip/24' -o eth0 -j MASQUERADE
+    post-up ip route add default via $gw
+
+auto vmbr1
+iface vmbr1 inet manual
+    bridge_ports eth3
+    bridge_stp off
+    bridge_fd 0
 EOF
+
 sed -i -E "s,^[^ ]+( .*pve.*)\$,$ip\1," /etc/hosts
+sed -i "s/pve.example.com/$domain/g;s/pve$/$dn/g" /etc/hosts
+sed -i "s/pve/$dn/g" /etc/postfix/main.cf
 
 cat >>/etc/issue <<EOF
     https://$ip:8006/
     https://$domain:8006/
-
 EOF
+
 ifup vmbr0
 ifup eth1
 ifup eth2
-iptables-save # show current rules.
+# ifup eth3
+#iptables-save # show current rules.
 killall agetty | true # force them to re-display the issue file.
-
 
 mkdir -p /vagrant/shared
 pushd /vagrant/shared
@@ -95,10 +98,10 @@ if [ ! -f $domain-crt.pem ]; then
         -days 365 \
         -in  $domain-csr.pem \
         -out $domain-crt.pem
-    openssl x509 \
-        -in $domain-crt.pem \
-        -outform der \
-        -out $domain-crt.der
+    # openssl x509 \
+    #     -in $domain-crt.pem \
+    #     -outform der \
+    #     -out $domain-crt.der
     # dump the certificate contents (for logging purposes).
     #openssl x509 -noout -text -in $domain-crt.pem
 fi
@@ -111,7 +114,6 @@ cp $domain-crt.pem "/etc/pve/nodes/$dn/pveproxy-ssl.pem"
 systemctl restart pveproxy
 # dump the TLS connection details and certificate validation result.
 (printf 'GET /404 HTTP/1.0\r\n\r\n'; sleep .1) | openssl s_client -CAfile $domain-crt.pem -connect $domain:8006 -servername $domain
-
 
 cat <<EOF
 access the proxmox web interface at:

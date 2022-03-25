@@ -7,62 +7,79 @@ Vagrant.configure("2") do |config|
 	config.ssh.insert_key = false
 	config.vm.box_check_update = false
 	config.vm.synced_folder '.', '/vagrant', disabled: true
+	
+	# config.trigger.before :up do |t|
+	# 	t.run = {path: 'scripts/prepare.sh', args: ['vagrant-libvirt', 'br0']}
+	# end
 
 	config.vm.provider :libvirt do |lv|
-		lv.management_network_name = 'default'
-		lv.management_network_address = '192.168.122.0/24'
-		# lv.management_network_mode = 'nat'
-		lv.management_network_keep = true
+		# lv.qemu_use_agent = true
+		# lv.channel :type => 'unix', :target_name => 'org.qemu.guest_agent.0', :target_type => 'virtio'
+		lv.management_network_name = 'mgmt'
+		lv.management_network_address = '192.168.0.0/24'
+		lv.management_network_mode = 'none'
+
+		lv.cpu_mode = 'host-passthrough'
+	    lv.nested = true
+	    lv.keymap = 'pt'
 
 		lv.default_prefix = ''
 		lv.graphics_type = 'none'
 	end
 
-	if Vagrant.has_plugin?("vagrant-proxyconf")
-		config.proxy.http = "http://192.168.122.1:8888/"
-		config.proxy.https = "http://192.168.122.1:8888/"
-		config.proxy.no_proxy = "localhost,127.0.0.1,::1"
-	end
-
-    config.trigger.before :up do |t|
-		t.run = {path: 'scripts/ceph-ansible.sh'}
-	end
-
     $pve.each do |node|
         config.vm.define node[:name] do |srv|
 		    srv.vm.box = "aesirteam/proxmox-ve-amd64"
-	  	    srv.vm.box_version = "6.4"
+	  	    # srv.vm.box_version = "7.1"
+			srv.vm.hostname = node[:name]
 	  	    
 		    srv.vm.network :private_network, ip: node[:eth1], auto_config: false,
 		        libvirt__network_name: 'pve_cluster',
-				libvirt__dhcp_enabled: false,
-				libvirt__forward_mode: 'none'
-				
+				libvirt__dhcp_enabled: true,
+				libvirt__forward_mode: 'nat',
+				libvirt__dhcp_start: '10.10.10.10',
+				libvirt__dhcp_end: '10.10.10.254'
+
 			srv.vm.network :private_network, ip: node[:eth2], auto_config: false,
 			    libvirt__network_name: 'storage_network',
 			    libvirt__dhcp_enabled: false,
 			    libvirt__forward_mode: 'none'
 
+			srv.vm.network :public_network, :dev => 'br0', :type => 'bridge', :mode => 'bridge' 
+
 			srv.vm.provider :libvirt do |lv|
+				lv.machine_type = 'pc-q35-focal'
 			    lv.memory = node[:ram]
 			    lv.cpus = node[:vcpu]
-			    lv.cpu_mode = 'host-passthrough'
-			    lv.nested = true
-			    lv.keymap = 'pt'
-			    lv.machine_virtual_size = node[:disk] if !node[:disk]
-
-			    lv.storage :file, :size => node[:storage], :path => "#{node[:name]}_osd.img", :type => 'qcow2', :cache => 'none' if !node[:storage]
+			    lv.machine_virtual_size = 20
+			    lv.storage :file, :size => node[:storage], :path => "#{node[:name]}_osd.img", :type => 'qcow2', :cache => 'none' if node[:storage]
 			end
 
-			srv.vm.provision :shell, path: 'scripts/prepare.sh', args: [node[:name], node[:eth1], node[:eth2]]
-			srv.vm.provision :shell, path: 'scripts/provision.sh'
+			srv.vm.provision :shell,  inline: <<-SHELL
+				ln -fs /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
+
+				proxy=http://192.168.122.1:8888/
+				cat > /etc/apt/apt.conf.d/17proxy <<-EOF
+				Acquire::http::proxy "$proxy";
+				Acquire::https::proxy "$$proxy";
+				EOF
+
+				echo GenerateName=yes > /etc/iscsi/initiatorname.iscsi
+			SHELL
+
+			srv.vm.provision :shell, path: 'scripts/provision.sh', args: [node[:eth1], node[:eth2]], reboot: true
 		end
     end
 
     $ceph.each do |node|
     	config.vm.define node[:name] do |srv|
-           	srv.vm.box = "centos/8"
-    		
+           	srv.vm.box =  'centos/stream8'
+    		srv.vm.hostname = node[:name]
+
+			srv.trigger.before :up do |t|
+				t.run = {path: 'scripts/ceph-ansible.sh'}
+			end
+
     	   	srv.vm.network :private_network, ip: node[:eth1],
     	   		libvirt__network_name: 'storage_network',
 	       		libvirt__dhcp_enabled: false,
@@ -72,17 +89,33 @@ Vagrant.configure("2") do |config|
 				libvirt__network_name: 'ceph_cluster',
 				libvirt__dhcp_enabled: false,
 				libvirt__forward_mode: 'none'
-	       
+			
+			srv.vm.network :public_network, :dev => 'br0', :type => 'bridge', :mode => 'bridge' 
+
 	    	srv.vm.provider :libvirt do |lv|
 	    		lv.memory = node[:ram]
 	        	lv.cpus = node[:vcpu]
-	        	lv.cpu_mode = 'host-passthrough'
-	        	lv.nested = true
-	        	lv.keymap = 'pt'
 	        	lv.storage :file, :size => node[:storage], :path => "#{node[:name]}_osd.img", :type => 'qcow2', :cache => 'none'
 			end
 
-			srv.vm.provision :shell, path: 'scripts/prepare.sh', args: node[:name]
+			srv.vm.provision :shell,  inline: <<-SHELL
+				ln -fs /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
+				setenforce 0
+				sed -i 's/enforcing/disabled/g' /etc/selinux/config
+				
+				sed -i -e "s|mirrorlist=|#mirrorlist=|g" /etc/yum.repos.d/CentOS-*
+				sed -i -e "s|#baseurl=http://mirror.centos.org|baseurl=http://mirrors.163.com|g" /etc/yum.repos.d/CentOS-*
+				
+				proxy=http://192.168.122.1:8888/
+				sed -i "/proxy=/d" /etc/dnf/dnf.conf
+				echo proxy=$proxy  >> /etc/dnf/dnf.conf
+
+				cat > /etc/environment <<-EOF
+				http_proxy=$proxy
+				https_proxy=$proxy
+				no_proxy=localhost,127.0.0.1,::1
+				EOF
+			SHELL
 
    			srv.vm.provision :ansible do |ansible|
 				ansible.config_file = 'ceph-ansible/ansible.cfg'
@@ -102,10 +135,6 @@ Vagrant.configure("2") do |config|
 			end if (node == $ceph.last)
        end 
     end
-
- #    if Vagrant.has_plugin?("vagrant-proxyconf")
-	# 	config.proxy.enabled = false
-	# end
 
     config.group.groups = $groups
 end
