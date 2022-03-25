@@ -8,13 +8,7 @@ Vagrant.configure("2") do |config|
 	config.vm.box_check_update = false
 	config.vm.synced_folder '.', '/vagrant', disabled: true
 	
-	# config.trigger.before :up do |t|
-	# 	t.run = {path: 'scripts/prepare.sh', args: ['vagrant-libvirt', 'br0']}
-	# end
-
 	config.vm.provider :libvirt do |lv|
-		# lv.qemu_use_agent = true
-		# lv.channel :type => 'unix', :target_name => 'org.qemu.guest_agent.0', :target_type => 'virtio'
 		lv.management_network_name = 'mgmt'
 		lv.management_network_address = '192.168.0.0/24'
 		lv.management_network_mode = 'none'
@@ -55,16 +49,17 @@ Vagrant.configure("2") do |config|
 			    lv.storage :file, :size => node[:storage], :path => "#{node[:name]}_osd.img", :type => 'qcow2', :cache => 'none' if node[:storage]
 			end
 
-			srv.vm.provision :shell,  inline: <<-SHELL
+			srv.vm.provision :shell, :args => $proxy, inline: <<-SHELL
 				ln -fs /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
-
-				proxy=http://192.168.122.1:8888/
-				cat > /etc/apt/apt.conf.d/17proxy <<-EOF
-				Acquire::http::proxy "$proxy";
-				Acquire::https::proxy "$$proxy";
-				EOF
-
 				echo GenerateName=yes > /etc/iscsi/initiatorname.iscsi
+
+				proxy=${1:-}
+				if [ ! -z $proxy ]; then
+					cat > /etc/apt/apt.conf.d/17proxy <<-EOF
+					Acquire::http::proxy "$proxy";
+					Acquire::https::proxy "$proxy";
+					EOF
+				fi
 			SHELL
 
 			srv.vm.provision :shell, path: 'scripts/provision.sh', args: [node[:eth1], node[:eth2]], reboot: true
@@ -98,7 +93,7 @@ Vagrant.configure("2") do |config|
 	        	lv.storage :file, :size => node[:storage], :path => "#{node[:name]}_osd.img", :type => 'qcow2', :cache => 'none'
 			end
 
-			srv.vm.provision :shell,  inline: <<-SHELL
+			srv.vm.provision :shell, :args => $proxy, inline: <<-SHELL
 				ln -fs /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
 				setenforce 0
 				sed -i 's/enforcing/disabled/g' /etc/selinux/config
@@ -106,15 +101,17 @@ Vagrant.configure("2") do |config|
 				sed -i -e "s|mirrorlist=|#mirrorlist=|g" /etc/yum.repos.d/CentOS-*
 				sed -i -e "s|#baseurl=http://mirror.centos.org|baseurl=http://mirrors.163.com|g" /etc/yum.repos.d/CentOS-*
 				
-				proxy=http://192.168.122.1:8888/
-				sed -i "/proxy=/d" /etc/dnf/dnf.conf
-				echo proxy=$proxy  >> /etc/dnf/dnf.conf
+				proxy=${1:-}
+				if [ ! -z $proxy ]; then
+					sed -i "/proxy=/d" /etc/dnf/dnf.conf
+					echo proxy=$proxy  >> /etc/dnf/dnf.conf
 
-				cat > /etc/environment <<-EOF
-				http_proxy=$proxy
-				https_proxy=$proxy
-				no_proxy=localhost,127.0.0.1,::1
-				EOF
+					cat > /etc/environment <<-EOF
+					http_proxy=$proxy
+					https_proxy=$proxy
+					no_proxy=localhost,127.0.0.1,::1
+					EOF
+				fi
 			SHELL
 
    			srv.vm.provision :ansible do |ansible|

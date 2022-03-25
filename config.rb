@@ -11,14 +11,14 @@ $pve = [
 	    :eth1 => '10.10.10.10',
 	    :eth2 => '10.20.20.100',
 	},{
-	    :name => "pve-node2",
+	    :name => 'pve-node2',
 	    :vcpu => 8,
 	    :ram => 16384,
 		# :storage => '200G',
 	    :eth1 => '10.10.10.11',
 	    :eth2 => '10.20.20.101',
 	},{
-	    :name => "pve-node3",
+	    :name => 'pve-node3',
 	    :vcpu => 8,
 	    :ram => 16384,
 		# :storage => '200G',
@@ -36,14 +36,14 @@ $ceph = [
 	    :eth1 => '10.20.20.30',
 	    :eth2 => '172.18.0.10',
 	},{
-	    :name => "ceph-node2",
+	    :name => 'ceph-node2',
 	    :vcpu => 8,
 	    :ram => 8192,
 		:storage => '200G',
 	    :eth1 => '10.20.20.31',
 	    :eth2 => '172.18.0.11',
 	},{
-	    :name => "ceph-node3",
+	    :name => 'ceph-node3',
 	    :vcpu => 8,
 	    :ram => 8192,
 		:storage => '200G',
@@ -56,3 +56,5 @@ $groups = {'pve' => [], 'ceph' => []}
 
 $pve.each {|item| $groups['pve'].push(item[:name])}
 $ceph.each {|item| $groups['ceph'].push(item[:name])}
+
+proxy = 'socks5://192.168.122.1:8889'
