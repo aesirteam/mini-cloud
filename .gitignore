@@ -9,5 +9,7 @@ tmp/
 secrets*
 
 ceph-ansible/
+cert/
 dump/
 iso/
+scripts/prepare.sh
